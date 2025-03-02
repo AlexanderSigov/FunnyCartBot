@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pac-Man</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        body { margin: 0; display: flex; justify-content: center; align-items: center; background: #000; overflow: hidden; }
+        canvas { border: 1px solid #333; max-width: 100%; height: auto; }
+        #restartButton { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 10px 20px; font-size: 20px; background-color: #FF5722; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        #mobileControls {
+            width: 150px;
+            height: 150px;
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: none; /* Скрываем джойстик по умолчанию */
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 20px;
+            font-family: Arial, sans-serif;
+            z-index: 10;
+        }
+        #gameOverText {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 32px;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            z-index: 10;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="480" height="480"></canvas>
+    <button id="restartButton">Restart</button>
+    <div id="mobileControls"></div>
+    <div id="score">Score: 0</div>
+    <div id="gameOverText"></div>
+
+    <!-- Подключаем библиотеку nipplejs -->
+    <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.0/dist/nipplejs.min.js"></script>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameOverTextElement = document.getElementById('gameOverText');
+
+        // Адаптивный размер холста
+        let tileSize = 24; // Базовый размер тайла
+        function resizeCanvas() {
+            const maxWidth = window.innerWidth;
+            const maxHeight = window.innerHeight;
+            const scale = Math.min(maxWidth / 480, maxHeight / 480);
+            canvas.width = 480 * scale;
+            canvas.height = 480 * scale;
+            tileSize = 24 * scale;
+            console.log('Холст адаптирован под размер экрана');
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        const gridWidth = canvas.width / tileSize;
+        const gridHeight = canvas.height / tileSize;
+
+        const map = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,0,1],
+            [1,2,1,1,2,1,1,1,2,1,1,2,1,1,1,2,1,1,2,1],
+            [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,2,1],
+            [1,2,2,2,2,1,2,2,2,1,1,2,2,2,1,2,2,2,2,1],
+            [1,1,1,1,2,1,1,1,2,1,1,2,1,1,1,2,1,1,1,1],
+            [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,2,1,1,1,2,1,1,2,1,1,1,2,1,1,2,1],
+            [1,2,2,1,2,2,2,2,2,1,1,2,2,2,2,2,1,2,2,1],
+            [1,1,2,1,2,1,1,1,2,1,1,2,1,1,1,2,1,2,1,1],
+            [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,1,2,1,1,1,2,1,1,1,2,1,1,1,1,2,1],
+            [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        // Класс для анимации
+        class AnimatedSprite {
+            constructor(src, frameWidth, frameHeight, frameCount, frameDuration) {
+                this.image = new Image();
+                this.image.src = src;
+                this.frameWidth = frameWidth;
+                this.frameHeight = frameHeight;
+                this.frameCount = frameCount;
+                this.frameDuration = frameDuration;
+                this.currentFrame = 0;
+                this.timer = 0;
+            }
+
+            update(deltaTime) {
+                this.timer += deltaTime;
+                if (this.timer >= this.frameDuration) {
+                    this.currentFrame = (this.currentFrame + 1) % this.frameCount;
+                    this.timer = 0;
+                }
+            }
+
+            draw(ctx, x, y, direction) {
+                if (this.image.complete && this.image.naturalWidth > 0) {
+                    let angle;
+                    switch (direction) {
+                        case 'right': angle = 0; break;
+                        case 'left': angle = Math.PI; break;
+                        case 'up': angle = -Math.PI / 2; break;
+                        case 'down': angle = Math.PI / 2; break;
+                        default: angle = 0;
+                    }
+                    ctx.save();
+                    ctx.translate(x + tileSize / 2, y + tileSize / 2);
+                    ctx.rotate(angle);
+                    ctx.drawImage(
+                        this.image,
+                        0, this.currentFrame * this.frameHeight,
+                        this.frameWidth, this.frameHeight,
+                        -tileSize / 2, -tileSize / 2,
+                        tileSize, tileSize
+                    );
+                    ctx.restore();
+                }
+            }
+
+            drawNoRotate(ctx, x, y) {
+                if (this.image.complete && this.image.naturalWidth > 0) {
+                    ctx.drawImage(
+                        this.image,
+                        0, this.currentFrame * this.frameHeight,
+                        this.frameWidth, this.frameHeight,
+                        x, y,
+                        tileSize, tileSize
+                    );
+                }
+            }
+        }
+
+        // Base64-коды для текстур
+        const textures = {
+            pacman: new AnimatedSprite('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAwCAYAAAALiLqjAAAAAXNSR0IArs4c6QAAATBJREFUWEftmEEWwiAMRO1JvP+xPEl9pYCRpJkh0OqiLgXzSUKGeS4P/FnBlsVb9xZT4PXlh1+edd2MdQRYUeAWm0EqXvsFdeqjnCyIAvSeHGUiAd1lYTIpgCnBRcM3doo9DLCCysw2QPfpUdAwAN15qydUBpHABQYBRwOEFWbf8XtAOgXQGyR29C2KgGCJzJvxyUjOkpnIJYOWZH9U5JpeKamYBhGgLy0q9RvOpJ2byx+ccCbskymvGvV8otlwLUemnWZbarmAsN2+iFX+qrpfJbt9kS3Ru5zP8UXI3YUeHKbtRTpOAxTZpgCNk2MSqHt6AIxuKfhfAbpKQ1vHUNT8o613VIkiEHlNpzqKWpo8zcPGy3F+yrYMW5b29JavHIbcvkhLQfDPEGXAnFlwNeoN/b+ILdxkhP4AAAAASUVORK5CYIIA', 24, 24, 2, 200),
+            ghost1: new AnimatedSprite('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAwCAYAAAALiLqjAAAAAXNSR0IArs4c6QAAARpJREFUWEftWEEOwyAMCy/Zbfv/c7pbX8KUjqAUkphNPW3pCdXBBlMRq4XwU0FJifAIPIg3ivkf1ClMLk+gIuJx1U1o4htfLK3as8TazSTw6crRTrTAZMt9sP/Zqr33IqbtEgFIzpM9AY2NIlCg0I0q7ce8UcDCLAHzi2EbmEAeFtECHqbPhK3iHfyJwFbe59A9rrZ9yxbhKwpXhGeAp+OKFIAepUXXWMQ+ej0iwlhdzoDH5n2k7vUJjzAhJ6LiNhyjx3aRCNPkPDZ7cjPXCgTS4yLsxBtmmiaUuej0OWcuOuzIXERRZlpu+r8XvDIXwfb3TUGmCuhaWrRskZuLIENQID0B5aIThSQ89cug4zr9WQ1HCnVEuSQXvQBcYv4Xob0nYwAAAABJRU5ErkJgggAA', 24, 24, 2, 200),
+            ghost2: new AnimatedSprite('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAwCAYAAAALiLqjAAAAAXNSR0IArs4c6QAAAR5JREFUWEftWMENgzAMJJuAxCpdpUN1la5SKWySKiFGTmL7aMUP8wLOuUsuET4RJnwlUBIs3AILcZpnkz9sG+EilyaQEHGvWoUGvv7FqVlrS5JWMwj8OnO0Ei4w2hJjO35Z9mftfa3mdpEAJs+DNQGOdSJQYA3v6ZMe+7BOQMQEAfnExDhlArqKCBNQMWZqtiqv4C4C87M5Uev2ku07bRH+RsEKew/gcFzgAtAjt+gai7KPWo+wsKxOe1Bar0TCvusDbmFEnjXUhiP02EPEwjh5ue+M5BFFCgSEW1jDa2aaKu65qNkFz0XFDs9FJTp6Lhpt8FwE+98fBZ4qoGlu0WmL1FwEGYwC6gkoF7X9tP4YYb8MDpwHN6nhUOHluegL0ExEJnnrB0YAAAAASUVORK5CYIIA', 24, 24, 2, 200),
+            ghost3: new AnimatedSprite('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAwCAYAAAALiLqjAAAAAXNSR0IArs4c6QAAAQ9JREFUWEftV1sOwzAIC5dY73+87RJUebUJARxN0z42+rca2a1hwaWELwYl5OEeWImfgP+4KFQuS4AhsXzsKrTwyRt7T215orzNKoAsQT0TbzIKLLbwY2ajV/1t3b+qB5EuAMmLwYbAiEkRLECUEtfWLAIKpgmoE1NsyAT9Yp4FDGwy9aAyVn8iQGJ8+Z750qPen22L0Lhv4V4PtghQUQggh1JY9BmL8h/K2hEeltVbD8oRr5Lc5/qKe1gjF8elEFl37C3iYQO5tqTHCKEFgo572MTrZprWxMhF0zRHLqp2RC7yMtP20v+94BW5CG6/twoiVUDbwqJdi+xcBBmcgrYT7A/x8ROp8/SE52HfzkUnrgL+F8qXXnAAAAAASUVORK5CYIIA', 24, 24, 2, 200),
+            wall: new Image(),
+            dot: new Image()
+        };
+
+        textures.wall.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAHBJREFUSEtjZEACUgz//yPzyWU/Y2BkhOmFM0CGMzMcIddMFH1/GWwYYJaALYAZ/pjBlioWyDIcZoBZwkhtw2EuhFkyagHOOBsNIoLJeTSIRoOIYAgQVDCaikZSENG8yoQFJk0rfWRLCMYeEQqQmy0AAsSLyeuFaxEAAAAASUVORK5CYIIA';
+        textures.dot.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAGCAYAAADgzO9IAAAAAXNSR0IArs4c6QAAACJJREFUGFdjZGBgYPjvz/AfRMMA40YGRkZ0QbgkFSVwWQ4A4mEPO6fUpUMAAAAASUVORK5CYIIA';
+
+        // Игровые объекты
+        let pacman = { x: 1, y: 1, speed: 2, direction: 'right' };
+        let pacmanVelocity = { x: 0, y: 0 }; // Вектор скорости Pac-Man
+        let ghosts = [
+            { x: 11, y: 13, speed: 1, anim: textures.ghost1, direction: 'right' },
+            { x: 18, y: 1, speed: 1, anim: textures.ghost2, direction: 'right' },
+            { x: 11, y: 8, speed: 1, anim: textures.ghost3, direction: 'right' }
+        ];
+        let dots = [];
+        let walls = [];
+        let score = 0;
+        let gameOver = false;
+        let gameOverText = '';
+
+        // Инициализация карты
+        for (let y = 0; y < map.length; y++) {
+            for (let x = 0; x < map[y].length; x++) {
+                if (map[y][x] === 1) walls.push({ x, y });
+                else if (map[y][x] === 2) dots.push({ x, y });
+            }
+        }
+
+        // Управление
+        const keys = { up: false, down: false, left: false, right: false };
+
+        // Создаем джойстик (только для мобильных устройств)
+        let joystick;
+        function createJoystick() {
+            if (!isMobile()) return;
+
+            document.getElementById('mobileControls').style.display = 'block';
+            joystick = nipplejs.create({
+                zone: document.getElementById('mobileControls'),
+                mode: 'static',
+                position: { left: '50%', top: '50%' },
+                color: 'blue',
+                size: 100
+            });
+
+            joystick.on('move', (evt, data) => {
+                const angle = data.angle.radian; // Угол в радианах
+
+                // Вычисляем компоненты скорости по X и Y с постоянной скоростью
+                pacmanVelocity.x = Math.cos(angle) * pacman.speed / tileSize;
+                pacmanVelocity.y = -Math.sin(angle) * pacman.speed / tileSize; // Минус, т.к. вверх — уменьшение Y
+            });
+
+            joystick.on('end', () => {
+                pacmanVelocity.x = 0;
+                pacmanVelocity.y = 0;
+            });
+
+            console.log('Джойстик создан');
+        }
+
+        // Проверка загрузки всех изображений
+        let texturesLoaded = 0;
+        function checkTexturesLoaded() {
+            texturesLoaded++;
+            console.log(`Текстура загружена: ${texturesLoaded}/6`);
+            if (texturesLoaded === 6) {
+                console.log('Все текстуры загружены, запуск игры...');
+                createJoystick();
+                startGame();
+            }
+        }
+
+        textures.pacman.image.onload = checkTexturesLoaded;
+        textures.ghost1.image.onload = checkTexturesLoaded;
+        textures.ghost2.image.onload = checkTexturesLoaded;
+        textures.ghost3.image.onload = checkTexturesLoaded;
+        textures.wall.onload = checkTexturesLoaded;
+        textures.dot.onload = checkTexturesLoaded;
+
+        // Управление с клавиатуры (только для ПК)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === 'ц' || e.key === 'Ц') {
+                keys.up = true;
+                keys.down = false;
+            }
+            if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S' || e.key === 'ы' || e.key === 'Ы') {
+                keys.down = true;
+                keys.up = false;
+            }
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' || e.key === 'ф' || e.key === 'Ф') {
+                keys.left = true;
+                keys.right = false;
+            }
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D' || e.key === 'в' || e.key === 'В') {
+                keys.right = true;
+                keys.left = false;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === 'ц' || e.key === 'Ц') keys.up = false;
+            if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S' || e.key === 'ы' || e.key === 'Ы') keys.down = false;
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' || e.key === 'ф' || e.key === 'Ф') keys.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D' || e.key === 'в' || e.key === 'В') keys.right = false;
+        });
+
+        // Игровой цикл
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            if (gameOver) return;
+
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            update(deltaTime);
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Запуск игры
+        function startGame() {
+            console.log('Игра запущена');
+            gameLoop(0);
+        }
+
+        // Проверка столкновений
+        function isCollision(x, y) {
+            if (x < 0.5 || x >= gridWidth - 0.5 || y < 0.5 || y >= gridHeight - 0.5) return true;
+            return walls.some(wall => {
+                const dx = Math.abs(wall.x - x);
+                const dy = Math.abs(wall.y - y);
+                return dx < 0.75 && dy < 0.75;
+            });
+        }
+
+        // Обновление состояния игры
+        function update(deltaTime) {
+            const dt = deltaTime / 1000; // Переводим миллисекунды в секунды
+
+            // Учитываем управление с клавиатуры (для ПК)
+            if (!isMobile()) {
+                pacmanVelocity.x = 0;
+                pacmanVelocity.y = 0;
+                if (keys.right) pacmanVelocity.x = pacman.speed / tileSize;
+                if (keys.left) pacmanVelocity.x = -pacman.speed / tileSize;
+                if (keys.up) pacmanVelocity.y = -pacman.speed / tileSize;
+                if (keys.down) pacmanVelocity.y = pacman.speed / tileSize;
+            }
+
+            // Движение Пакмана
+            let nextX = pacman.x + pacmanVelocity.x * dt * 60; // 60 — базовая частота кадров
+            let nextY = pacman.y + pacmanVelocity.y * dt * 60;
+
+            if (!isCollision(nextX, nextY)) {
+                pacman.x = nextX;
+                pacman.y = nextY;
+
+                // Обновляем направление для анимации
+                if (Math.abs(pacmanVelocity.x) > Math.abs(pacmanVelocity.y)) {
+                    pacman.direction = pacmanVelocity.x > 0 ? 'right' : 'left';
+                } else if (pacmanVelocity.y !== 0) {
+                    pacman.direction = pacmanVelocity.y > 0 ? 'down' : 'up';
+                }
+            } else {
+                // Пробуем двигаться только по X или Y при столкновении
+                nextX = pacman.x + pacmanVelocity.x * dt * 60;
+                nextY = pacman.y;
+                if (!isCollision(nextX, nextY)) {
+                    pacman.x = nextX;
+                    pacman.direction = pacmanVelocity.x > 0 ? 'right' : 'left';
+                } else {
+                    nextX = pacman.x;
+                    nextY = pacman.y + pacmanVelocity.y * dt * 60;
+                    if (!isCollision(nextX, nextY)) {
+                        pacman.y = nextY;
+                        pacman.direction = pacmanVelocity.y > 0 ? 'down' : 'up';
+                    }
+                }
+            }
+
+            textures.pacman.update(deltaTime);
+
+            // Сбор точек
+            dots = dots.filter(dot => {
+                if (Math.abs(dot.x - pacman.x) < 0.5 && Math.abs(dot.y - pacman.y) < 0.5) {
+                    score += 10;
+                    scoreElement.textContent = `Score: ${score}`;
+                    return false;
+                }
+                return true;
+            });
+
+            // Движение призраков
+            ghosts.forEach(ghost => {
+                const directions = [
+                    { dx: 0, dy: -ghost.speed * dt * 60 / tileSize, name: 'up' },
+                    { dx: 0, dy: ghost.speed * dt * 60 / tileSize, name: 'down' },
+                    { dx: -ghost.speed * dt * 60 / tileSize, dy: 0, name: 'left' },
+                    { dx: ghost.speed * dt * 60 / tileSize, dy: 0, name: 'right' }
+                ];
+
+                let bestDirection = null;
+                let minDistance = Infinity;
+
+                directions.forEach(dir => {
+                    const nextX = ghost.x + dir.dx;
+                    const nextY = ghost.y + dir.dy;
+                    if (!isCollision(nextX, nextY)) {
+                        const dx = pacman.x - nextX;
+                        const dy = pacman.y - nextY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            bestDirection = dir;
+                        }
+                    }
+                });
+
+                if (bestDirection) {
+                    const newX = ghost.x + bestDirection.dx;
+                    const newY = ghost.y + bestDirection.dy;
+                    if (!isCollision(newX, newY)) {
+                        ghost.x = newX;
+                        ghost.y = newY;
+                    }
+                }
+
+                // Отталкивание призраков друг от друга
+                ghosts.forEach(otherGhost => {
+                    if (ghost !== otherGhost) {
+                        const dxGhost = otherGhost.x - ghost.x;
+                        const dyGhost = otherGhost.y - ghost.y;
+                        const distGhost = Math.sqrt(dxGhost * dxGhost + dyGhost * dyGhost);
+                        const minDistance = 0.75;
+                        if (distGhost < minDistance && distGhost > 0) {
+                            const pushForce = (minDistance - distGhost) * 0.03;
+                            const newGhostX = ghost.x - (dxGhost / distGhost) * pushForce;
+                            const newGhostY = ghost.y - (dyGhost / distGhost) * pushForce;
+                            const newOtherX = otherGhost.x + (dxGhost / distGhost) * pushForce;
+                            const newOtherY = otherGhost.y + (dyGhost / distGhost) * pushForce;
+                            if (!isCollision(newGhostX, newGhostY)) {
+                                ghost.x = newGhostX;
+                                ghost.y = newGhostY;
+                            }
+                            if (!isCollision(newOtherX, newOtherY)) {
+                                otherGhost.x = newOtherX;
+                                otherGhost.y = newOtherY;
+                            }
+                        }
+                    }
+                });
+
+                ghost.anim.update(deltaTime);
+            });
+
+            // Проверка столкновений с призраками
+            ghosts.forEach(ghost => {
+                if (Math.abs(ghost.x - pacman.x) < 0.5 && Math.abs(ghost.y - pacman.y) < 0.5) {
+                    gameOver = true;
+                    gameOverText = 'Game Over';
+                    document.getElementById('restartButton').style.display = 'block';
+                    gameOverTextElement.textContent = gameOverText;
+                    gameOverTextElement.style.display = 'block';
+                }
+            });
+
+            // Проверка победы
+            if (dots.length === 0) {
+                gameOver = true;
+                gameOverText = 'You Win!';
+                document.getElementById('restartButton').style.display = 'block';
+                gameOverTextElement.textContent = gameOverText;
+                gameOverTextElement.style.display = 'block';
+            }
+        }
+
+        // Отрисовка игры
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            walls.forEach(wall => {
+                ctx.drawImage(textures.wall, wall.x * tileSize, wall.y * tileSize, tileSize, tileSize);
+            });
+
+            dots.forEach(dot => {
+                ctx.drawImage(textures.dot, dot.x * tileSize + tileSize / 2 - 3, dot.y * tileSize + tileSize / 2 - 3, 6, 6);
+            });
+
+            textures.pacman.draw(ctx, pacman.x * tileSize, pacman.y * tileSize, pacman.direction);
+
+            ghosts.forEach(ghost => {
+                ghost.anim.drawNoRotate(ctx, ghost.x * tileSize, ghost.y * tileSize);
+            });
+        }
+
+        // Перезапуск игры
+        document.getElementById('restartButton').addEventListener('click', () => {
+            document.getElementById('restartButton').style.display = 'none';
+            gameOverTextElement.style.display = 'none';
+            pacman = { x: 1, y: 1, speed: 2, direction: 'right' };
+            pacmanVelocity = { x: 0, y: 0 };
+            ghosts = [
+                { x: 11, y: 13, speed: 1, anim: textures.ghost1, direction: 'right' },
+                { x: 18, y: 1, speed: 1, anim: textures.ghost2, direction: 'right' },
+                { x: 11, y: 8, speed: 1, anim: textures.ghost3, direction: 'right' }
+            ];
+            dots = [];
+            walls = [];
+            score = 0;
+            scoreElement.textContent = `Score: ${score}`;
+            gameOver = false;
+            gameOverText = '';
+            for (let y = 0; y < map.length; y++) {
+                for (let x = 0; x < map[y].length; x++) {
+                    if (map[y][x] === 1) walls.push({ x, y });
+                    else if (map[y][x] === 2) dots.push({ x, y });
+                }
+            }
+            gameLoop(0);
+        });
+
+        // Проверка, является ли устройство мобильным
+        function isMobile() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+    </script>
+</body>
+</html>
