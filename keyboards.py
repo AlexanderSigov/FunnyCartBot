@@ -6,7 +6,7 @@ main_keyboard = ReplyKeyboardMarkup(
         [KeyboardButton(text="❌ Крестики-нолики"), KeyboardButton(text="🏙 Города")],
         [KeyboardButton(text="🐍 Змейка"), KeyboardButton(text="🐍 Змейка v2.0")],
         [KeyboardButton(text="😂 Генератор мемов"), KeyboardButton(text="🦖 Динозаврик")],
-        [KeyboardButton(text="🎵 Угадай мелодию")]
+        [KeyboardButton(text="🎵 Угадай мелодию"), KeyboardButton(text="🎮 Pac-Man")]
     ],
     resize_keyboard=True
 )

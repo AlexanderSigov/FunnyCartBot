@@ -12,6 +12,7 @@ from handlers import meme_generator_v2
 from handlers import meme_generator_v2_imgflip
 from handlers import dino
 from handlers import guess_melody
+from handlers import pacman
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +32,7 @@ dp.include_router(meme_generator.router)
 dp.include_router(meme_generator_v2_imgflip.router)
 dp.include_router(dino.router)
 dp.include_router(guess_melody.router)
+dp.include_router(pacman.router)
 
 
 async def main():
